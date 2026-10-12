@@ -269,6 +269,16 @@ async function loadCatalog() {
     els.list.innerHTML = '<p class="muted">Couldn’t load the app list. Reload the page to try again.</p>';
     return;
   }
+  // A cached old copy of this page is running against a newer build: reload once.
+  if (catalog.code && !import.meta.url.includes(`/${catalog.code}/`)) {
+    let tried = null;
+    try { tried = sessionStorage.getItem('turboadb-reload'); } catch {}
+    if (tried !== catalog.code) {
+      try { sessionStorage.setItem('turboadb-reload', catalog.code); } catch {}
+      location.replace(`${location.pathname}?v=${encodeURIComponent(catalog.code.split('/').pop())}`);
+      return;
+    }
+  }
   const template = $('app-card');
   els.list.replaceChildren();
   if (!catalog.apps.length) {

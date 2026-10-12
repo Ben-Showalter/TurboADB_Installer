@@ -6,7 +6,7 @@ import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { build, parseAppMd, rebaseLinks, abiOf, pickAssets } from '../scripts/build-catalog.mjs';
+import { build, parseAppMd, rebaseLinks, abiOf, pickAssets, rewriteCodePaths } from '../scripts/build-catalog.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const quiet = { log() {}, error() {} };
@@ -185,4 +185,21 @@ test('a split release downloads each CPU type into its own file', async () => {
     ['armeabi-v7a', 'apks/chat-armeabi-v7a.apk', v7a.length],
   ]);
   assert.ok(!existsSync(join(out, 'apks/chat.apk')));
+});
+
+test('the page loads its code from a folder named after the code, so old copies never mix', async () => {
+  assert.equal(
+    rewriteCodePaths('<link href="css/style.css"><script src="js/ui.js"></script><img src="favicon.svg">', 'static/abc'),
+    '<link href="static/abc/css/style.css"><script src="static/abc/js/ui.js"></script><img src="favicon.svg">',
+  );
+  const out = await mkdtemp(join(tmpdir(), 'turboadb-out-'));
+  await build({ root: ROOT, outDir: out, offline: true, log: quiet });
+  const html = await readFile(join(out, 'index.html'), 'utf8');
+  const dir = html.match(/src="(static\/[0-9a-f]{10})\/js\/ui\.js"/)?.[1];
+  assert.ok(dir, 'index.html points at static/<hash>/js/ui.js');
+  assert.match(html, new RegExp(`href="${dir}/css/style\\.css"`));
+  for (const f of ['js/ui.js', 'js/adb.js', 'js/install.js', 'js/commands.js', 'css/style.css']) {
+    assert.ok(existsSync(join(out, dir, f)), `${f} is in ${dir}`);
+  }
+  assert.ok(!existsSync(join(out, 'js')), 'no unversioned js/ folder');
 });

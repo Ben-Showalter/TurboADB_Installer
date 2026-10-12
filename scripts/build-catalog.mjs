@@ -16,7 +16,9 @@ import { marked } from 'marked';
 import { parseCommands } from '../js/commands.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const SITE_FILES = ['index.html', 'css', 'js', 'favicon.svg'];
+// The page's code goes in a folder named after its contents (static/<hash>/),
+// so a browser holding an old copy can never mix it with a new catalog.json.
+const CODE_DIRS = ['css', 'js'];
 const ICON_NAMES = ['icon.svg', 'icon.png', 'icon.webp', 'icon.jpg'];
 // Files in an app folder that aren't copied to the site as-is.
 const PRIVATE_FILES = new Set(['app.md', 'commands.txt', 'app.apk']);
@@ -168,12 +170,32 @@ async function buildApp(id, dir, outDir, offline) {
   };
 }
 
+/** Points index.html's css/ and js/ links at the versioned code folder. */
+export function rewriteCodePaths(html, codeDir) {
+  return html.replace(/\b(href|src)="(css|js)\//g, `$1="${codeDir}/$2/`);
+}
+
+/** Copies css/ and js/ into static/<content hash>/ and returns that folder's path. */
+async function copyCode(root, outDir) {
+  const hash = createHash('sha256');
+  const files = [];
+  const dirs = CODE_DIRS.filter((dir) => existsSync(join(root, dir)));
+  for (const dir of dirs) {
+    for (const name of (await readdir(join(root, dir))).sort()) files.push(join(dir, name));
+  }
+  for (const file of files) hash.update(file).update(await readFile(join(root, file)));
+  const codeDir = `static/${hash.digest('hex').slice(0, 10)}`;
+  for (const dir of dirs) await cp(join(root, dir), join(outDir, codeDir, dir), { recursive: true });
+  return codeDir;
+}
+
 export async function build({ root = ROOT, outDir = join(ROOT, '_site'), offline = false, log = console } = {}) {
   await rm(outDir, { recursive: true, force: true });
   await mkdir(join(outDir, 'apks'), { recursive: true });
-  for (const name of SITE_FILES) {
-    if (existsSync(join(root, name))) await cp(join(root, name), join(outDir, name), { recursive: true });
-  }
+  const codeDir = await copyCode(root, outDir);
+  const index = await readFile(join(root, 'index.html'), 'utf8');
+  await writeFile(join(outDir, 'index.html'), rewriteCodePaths(index, codeDir));
+  if (existsSync(join(root, 'favicon.svg'))) await cp(join(root, 'favicon.svg'), join(outDir, 'favicon.svg'));
 
   const appsDir = join(root, 'apps');
   const apps = [];
@@ -196,7 +218,7 @@ export async function build({ root = ROOT, outDir = join(ROOT, '_site'), offline
 
   await writeFile(
     join(outDir, 'catalog.json'),
-    JSON.stringify({ built: new Date().toISOString(), apps }, null, 2),
+    JSON.stringify({ built: new Date().toISOString(), code: codeDir, apps }, null, 2),
   );
   return { apps, warnings, errors };
 }
