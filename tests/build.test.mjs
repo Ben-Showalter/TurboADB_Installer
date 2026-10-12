@@ -6,7 +6,7 @@ import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { build, parseAppMd, rebaseLinks } from '../scripts/build-catalog.mjs';
+import { build, parseAppMd, rebaseLinks, abiOf, pickAssets } from '../scripts/build-catalog.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const quiet = { log() {}, error() {} };
@@ -85,9 +85,11 @@ test('downloads the latest GitHub release APK and records its checksum', async (
   assert.deepEqual(warnings, []);
   const [a] = apps;
   assert.equal(a.version, 'v1.2.3');
-  assert.equal(a.apk.path, 'apks/app.apk');
-  assert.equal(a.apk.size, apk.length);
-  assert.equal(a.apk.sha256, createHash('sha256').update(apk).digest('hex'));
+  assert.equal(a.apks.length, 1);
+  assert.equal(a.apks[0].abi, null);
+  assert.equal(a.apks[0].path, 'apks/app.apk');
+  assert.equal(a.apks[0].size, apk.length);
+  assert.equal(a.apks[0].sha256, createHash('sha256').update(apk).digest('hex'));
   assert.deepEqual(new Uint8Array(await readFile(join(out, 'apks/app.apk'))), apk);
   const catalog = JSON.parse(await readFile(join(out, 'catalog.json'), 'utf8'));
   assert.equal(catalog.apps[0].id, 'app');
@@ -99,7 +101,7 @@ test('a repo with no release yet is a warning, and the card shows as unavailable
   const { apps, errors, warnings } = await build({ root, outDir: join(root, '_site'), log: quiet });
   assert.deepEqual(errors, []);
   assert.equal(warnings.length, 1);
-  assert.equal(apps[0].apk, null);
+  assert.deepEqual(apps[0].apks, []);
   assert.match(apps[0].unavailable, /No published release/);
 });
 
@@ -108,7 +110,7 @@ test('a local app.apk is used without any network', async () => {
   const root = await makeSite({ app: { 'app.md': '---\nname: A\nsummary: S\npackage: com.a\nversion: 2.0\n---\n', 'app.apk': 'bytes' } });
   const { apps } = await build({ root, outDir: join(root, '_site'), log: quiet });
   assert.equal(apps[0].version, '2.0');
-  assert.equal(apps[0].apk.size, 5);
+  assert.equal(apps[0].apks[0].size, 5);
 });
 
 test('a broken app.md fails the build but the other apps still build', async () => {
@@ -132,3 +134,55 @@ test('apps sort by order, then name', async () => {
   assert.deepEqual(apps.map((a) => a.id), ['z', 'a', 'b']);
 });
 
+
+test('abiOf reads the CPU type from a file name', () => {
+  assert.equal(abiOf('app-arm64-v8a-release.apk'), 'arm64-v8a');
+  assert.equal(abiOf('app-armeabi-v7a-release.apk'), 'armeabi-v7a');
+  assert.equal(abiOf('app-x86_64-release.apk'), 'x86_64');
+  assert.equal(abiOf('app-x86-release.apk'), 'x86');
+  assert.equal(abiOf('app-universal-release.apk'), null);
+  assert.equal(abiOf('TurboText_v1.0.4.apk'), null);
+});
+
+test('pickAssets keeps one APK per CPU type and skips universal and source archives', () => {
+  const asset = (name) => ({ name, browser_download_url: `https://dl/${name}` });
+  const picked = pickAssets([
+    asset('app-arm64-v8a-release.apk'),
+    asset('app-armeabi-v7a-release.apk'),
+    asset('app-universal-release.apk'),
+    asset('source.zip'),
+  ]);
+  assert.deepEqual(picked.map((p) => [p.abi, p.asset.name]), [
+    ['arm64-v8a', 'app-arm64-v8a-release.apk'],
+    ['armeabi-v7a', 'app-armeabi-v7a-release.apk'],
+  ]);
+  assert.deepEqual(pickAssets([asset('FlipWeather_v1.0-release.apk')]).map((p) => p.abi), [null]);
+  assert.deepEqual(pickAssets([asset('app-universal-release.apk'), asset('app-arm64-v8a-release.apk')], 'universal')
+    .map((p) => p.asset.name), ['app-universal-release.apk']);
+});
+
+test('a split release downloads each CPU type into its own file', async () => {
+  const arm64 = new TextEncoder().encode('arm64 bytes');
+  const v7a = new TextEncoder().encode('v7a');
+  mockFetch({
+    'https://api.github.com/repos/me/split/releases/latest': {
+      tag_name: 'v0.1.8', html_url: 'https://github.com/me/split/releases/tag/v0.1.8', published_at: null,
+      assets: [
+        { name: 'app-arm64-v8a-release.apk', browser_download_url: 'https://dl/arm64.apk' },
+        { name: 'app-armeabi-v7a-release.apk', browser_download_url: 'https://dl/v7a.apk' },
+        { name: 'app-universal-release.apk', browser_download_url: 'https://dl/universal.apk' },
+      ],
+    },
+    'https://dl/arm64.apk': arm64,
+    'https://dl/v7a.apk': v7a,
+  });
+  const root = await makeSite({ chat: { 'app.md': '---\nname: C\nsummary: S\npackage: c\nrepo: me/split\n---\n' } });
+  const out = join(root, '_site');
+  const { apps, errors } = await build({ root, outDir: out, log: quiet });
+  assert.deepEqual(errors, []);
+  assert.deepEqual(apps[0].apks.map((a) => [a.abi, a.path, a.size]), [
+    ['arm64-v8a', 'apks/chat-arm64-v8a.apk', arm64.length],
+    ['armeabi-v7a', 'apks/chat-armeabi-v7a.apk', v7a.length],
+  ]);
+  assert.ok(!existsSync(join(out, 'apks/chat.apk')));
+});

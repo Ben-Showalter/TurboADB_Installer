@@ -67,13 +67,17 @@ export class Phone {
     this.adb.disconnected.then(() => this.#dropped());
 
     onStatus('Connected. Reading phone details…');
-    const [manufacturer, model, release, sdk] = await Promise.all([
+    const [manufacturer, model, release, sdk, abilist, abi] = await Promise.all([
       this.getprop('ro.product.manufacturer'),
       this.getprop('ro.product.model'),
       this.getprop('ro.build.version.release'),
       this.getprop('ro.build.version.sdk'),
+      this.getprop('ro.product.cpu.abilist'),
+      this.getprop('ro.product.cpu.abi'),
     ]);
-    this.info = { manufacturer, model, release, sdk: parseInt(sdk, 10) || 0 };
+    // CPU types the phone can run, most preferred first (for split APKs).
+    const abis = (abilist || abi).split(',').map((a) => a.trim()).filter(Boolean);
+    this.info = { manufacturer, model, release, sdk: parseInt(sdk, 10) || 0, abis };
     return this.info;
   }
 

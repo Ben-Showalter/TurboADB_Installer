@@ -109,6 +109,17 @@ function formatSize(bytes) {
   return bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.ceil(bytes / 1024)} KB`;
 }
 
+/** "5.8 MB", or "50–75 MB" when there's one APK per CPU type. */
+function sizeLabel(apks) {
+  const sizes = apks.map((a) => a.size);
+  const min = Math.min(...sizes);
+  const max = Math.max(...sizes);
+  const [low, high] = [formatSize(min), formatSize(max)];
+  if (low === high) return low;
+  const [lowNum, lowUnit] = low.split(' ');
+  return lowUnit === high.split(' ')[1] ? `${lowNum}–${high}` : `${low}–${high}`;
+}
+
 function sameVersion(installed, latest) {
   const clean = (v) => String(v ?? '').toLowerCase().replace(/^[^\d]*/, '');
   return Boolean(installed) && clean(latest).includes(clean(installed));
@@ -120,11 +131,11 @@ function renderCard(card) {
   const version = el.querySelector('.app-version');
   const parts = [];
   if (app.version) parts.push(`Latest: ${app.version}`);
-  if (app.apk) parts.push(formatSize(app.apk.size));
+  if (app.apks.length) parts.push(sizeLabel(app.apks));
   if (installed === '' || installed) parts.push(`On phone: ${installed || 'installed'}`);
   version.textContent = parts.join(' · ');
 
-  if (!app.apk) {
+  if (!app.apks.length) {
     button.textContent = 'Unavailable';
     button.disabled = true;
     button.title = app.unavailable || '';
@@ -144,8 +155,9 @@ function setAllBusy(value) {
 
 function logResult(list, result) {
   const li = document.createElement('li');
-  const mark = !result.ok ? '✗' : result.warning ? '⚠' : '✓';
-  li.className = !result.ok ? 'bad' : result.warning ? 'warn' : 'good';
+  const kind = !result.ok ? 'bad' : result.warning ? 'warn' : result.skipped ? 'skip' : 'good';
+  const mark = { bad: '✗', warn: '⚠', skip: '–', good: '✓' }[kind];
+  li.className = kind;
   const head = document.createElement('div');
   head.innerHTML = `<span class="mark">${mark}</span> <code></code>`;
   head.querySelector('code').textContent = result.line;

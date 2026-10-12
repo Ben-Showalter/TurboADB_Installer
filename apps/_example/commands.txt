@@ -2,11 +2,15 @@
 # exactly as you'd type them after `adb shell`. Lines starting with # are notes.
 # {package} is replaced with the package name from app.md.
 
-# Grant a normal runtime permission:
-# pm grant {package} android.permission.READ_CONTACTS
+# Grant runtime permissions (several per line is fine):
+# grant {package} android.permission.READ_CONTACTS android.permission.CAMERA
+
+# Only on newer Android: start the line with "sdk N+:" (33 = Android 13)
+# sdk 33+: grant {package} android.permission.POST_NOTIFICATIONS
 
 # Shortcuts (the site works out the right commands for the phone's Android version):
 # enable-accessibility {package}/.MyAccessibilityService
 # enable-notification-listener {package}/.MyNotificationListener
 # set-home {package}/.MainActivity
+# set-sms-app {package}
 # device-owner {package}/.MyAdminReceiver

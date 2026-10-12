@@ -1,0 +1,14 @@
+# MatChat setup, run top to bottom after installing.
+
+# Microphone (voice calls); notifications and pictures on Android 13+
+grant {package} android.permission.RECORD_AUDIO
+sdk 33+: grant {package} android.permission.POST_NOTIFICATIONS android.permission.READ_MEDIA_IMAGES
+
+# Don't let battery saving stop message sync
+dumpsys deviceidle whitelist +{package}
+
+# Optional "background helper": right soft key fix, quieter sync notification
+enable-accessibility {package}/.accessibility.MatChatKeyAccessibilityService
+
+# Lets its built-in updater install new versions
+sdk 26+: appops set {package} REQUEST_INSTALL_PACKAGES allow

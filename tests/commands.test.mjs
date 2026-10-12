@@ -152,3 +152,66 @@ test('runAll keeps going after a failure', async () => {
   assert.equal(results.length, 2);
   assert.deepEqual(calls, ['false', 'echo hi']);
 });
+
+test('sdk N+: skips the line on older phones without a failure', async () => {
+  const { shell, calls } = fakeShell();
+  const r = await runLine('sdk 30+: appops set com.x MANAGE_EXTERNAL_STORAGE allow', { shell, sdk: 28 });
+  assert.equal(r.ok, true);
+  assert.equal(r.skipped, true);
+  assert.match(r.note, /API 30\+.*API 28/);
+  assert.deepEqual(calls, []);
+});
+
+test('sdk N+: runs the rest of the line (shortcuts too) on new enough phones', async () => {
+  const { shell, calls } = fakeShell();
+  const r = await runLine('sdk 26+: grant com.x android.permission.CAMERA', { shell, sdk: 26 });
+  assert.equal(r.ok, true);
+  assert.equal(r.line, 'sdk 26+: grant com.x android.permission.CAMERA');
+  assert.deepEqual(calls, ['pm grant com.x android.permission.CAMERA']);
+});
+
+test('grant runs pm grant for each permission', async () => {
+  const { shell, calls } = fakeShell();
+  const r = await runLine('grant com.x android.permission.A android.permission.B', { shell, sdk: 25 });
+  assert.equal(r.ok, true);
+  assert.deepEqual(calls, ['pm grant com.x android.permission.A', 'pm grant com.x android.permission.B']);
+});
+
+test('grant notes permissions this Android version lacks instead of failing', async () => {
+  const { shell } = fakeShell([
+    [/BLUETOOTH_CONNECT/, { output: 'Exception occurred while executing:\njava.lang.IllegalArgumentException: Unknown permission: android.permission.BLUETOOTH_CONNECT', exitCode: 255 }],
+  ]);
+  const r = await runLine('grant com.x android.permission.CAMERA android.permission.BLUETOOTH_CONNECT', { shell, sdk: 28 });
+  assert.equal(r.ok, true);
+  assert.match(r.note, /BLUETOOTH_CONNECT/);
+});
+
+test('grant still fails on a real error', async () => {
+  const { shell } = fakeShell([[/pm grant/, { output: 'Exception occurred while executing:\njava.lang.SecurityException: Package com.x has not been installed', exitCode: 255 }]]);
+  const r = await runLine('grant com.x android.permission.CAMERA', { shell, sdk: 28 });
+  assert.equal(r.ok, false);
+});
+
+test('set-sms-app uses the role command on Android 10+', async () => {
+  const { shell, calls } = fakeShell();
+  const r = await runLine('set-sms-app com.x', { shell, sdk: 29 });
+  assert.equal(r.ok, true);
+  assert.equal(r.warning, undefined);
+  assert.deepEqual(calls, ['cmd role add-role-holder android.app.role.SMS com.x']);
+});
+
+test('set-sms-app opens the phone’s prompt on older Android', async () => {
+  const { shell, calls } = fakeShell();
+  const r = await runLine('set-sms-app com.x', { shell, sdk: 28 });
+  assert.equal(r.ok, true);
+  assert.match(r.warning, /Yes/);
+  assert.deepEqual(calls, ['am start -a android.provider.Telephony.ACTION_CHANGE_DEFAULT --es package com.x']);
+});
+
+test('set-sms-app falls back to the prompt when the role command fails', async () => {
+  const { shell, calls } = fakeShell([[/^cmd role/, { output: 'Error: ...', exitCode: 1 }]]);
+  const r = await runLine('set-sms-app com.x', { shell, sdk: 30 });
+  assert.equal(r.ok, true);
+  assert.match(r.warning, /Yes/);
+  assert.equal(calls.length, 2);
+});

@@ -1,0 +1,7 @@
+# FlipWeather setup, run top to bottom after installing.
+
+# Your location, for the local forecast and radar
+grant {package} android.permission.ACCESS_FINE_LOCATION android.permission.ACCESS_COARSE_LOCATION
+
+# Lets its built-in updater install new versions
+sdk 26+: appops set {package} REQUEST_INSTALL_PACKAGES allow

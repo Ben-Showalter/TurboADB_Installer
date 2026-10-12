@@ -39,6 +39,11 @@ Folders whose name starts with `_` (like `_example`) are ignored.
 | `version:` | no | Version to show (filled in automatically for `repo:`) |
 | `order:` | no | Sort position; lower numbers first (default 1000, then by name) |
 
+If a release has one APK per processor type (file names containing
+`arm64-v8a`, `armeabi-v7a`, `x86_64` or `x86`, like MatChat's), the site keeps
+all of them, skips any `universal` APK, and installs the one that matches the
+connected phone.
+
 Pictures for the Read more text go in the same folder, e.g.
 `![Home screen](home.png)`.
 
@@ -56,10 +61,20 @@ pm grant {package} android.permission.READ_CONTACTS
 appops set {package} SYSTEM_ALERT_WINDOW allow
 ```
 
+Start a line with **`sdk N+:`** to run it only on Android API level N or newer
+(API 26 = Android 8, 29 = Android 10, 30 = Android 11, 33 = Android 13). On older
+phones the line shows as skipped instead of failed:
+
+```
+sdk 33+: grant {package} android.permission.POST_NOTIFICATIONS
+```
+
 These **shortcuts** do the fiddly ones safely:
 
 | Shortcut | What it does |
 |---|---|
+| `grant {package} PERM PERM …` | Grants several runtime permissions in one line; ones this phone's Android version doesn't have are noted, not failed |
+| `set-sms-app {package}` | Makes the app the default texting app; on phones that can't do that from adb, opens the phone's "change SMS app?" prompt and tells the user to answer Yes |
 | `enable-accessibility pkg/.Service` | Turns on an accessibility service **without turning off the others already on** (a plain `settings put` would replace them) |
 | `enable-notification-listener pkg/.Listener` | Grants notification access, using the right method for the phone's Android version |
 | `set-home pkg/.Activity` | Makes the app the default Home screen; on phones that can't do that from adb, opens the "choose Home app" prompt and tells the user to pick it |

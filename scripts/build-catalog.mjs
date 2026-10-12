@@ -58,38 +58,71 @@ async function download(url, dest) {
   return bytes;
 }
 
-/** Finds and fetches the APK for one app. Returns { version, source, bytes } or { error }. */
-async function resolveApk(id, dir, fields, apkDest, offline) {
+// CPU types an APK can be built for, longest names first so "x86" doesn't match "x86_64".
+const ABIS = ['arm64-v8a', 'armeabi-v7a', 'armeabi', 'x86_64', 'x86'];
+
+/** The CPU type an APK's file name says it's for, or null for a single all-CPU APK. */
+export function abiOf(fileName) {
+  return ABIS.find((abi) => new RegExp(`(^|[^a-z0-9])${abi}($|[^a-z0-9_])`, 'i').test(fileName)) ?? null;
+}
+
+/**
+ * Picks which release files to ship: one APK per CPU type when the release is
+ * split that way (skipping the huge "universal" one), otherwise a single APK.
+ */
+export function pickAssets(assets, wantedName) {
+  const apks = assets.filter((a) => /\.apk$/i.test(a.name));
+  const candidates = wantedName
+    ? apks.filter((a) => a.name.includes(wantedName))
+    : apks.filter((a) => !/debug/i.test(a.name));
+  const perAbi = new Map();
+  for (const a of candidates) {
+    const abi = abiOf(a.name);
+    if (abi && !perAbi.has(abi)) perAbi.set(abi, a);
+  }
+  if (perAbi.size) return [...perAbi].map(([abi, asset]) => ({ abi, asset }));
+  const single = candidates[0] ?? (wantedName ? null : apks[0]);
+  return single ? [{ abi: null, asset: single }] : [];
+}
+
+/**
+ * Finds and fetches the APK(s) for one app into apks/.
+ * Returns { version, source, published, files: [{ abi, name, bytes }] } or { error }.
+ */
+async function resolveApks(id, dir, fields, apksDir, offline) {
   const local = join(dir, 'app.apk');
   if (existsSync(local)) {
     const bytes = await readFile(local);
-    await writeFile(apkDest, bytes);
-    return { version: fields.version || '', bytes };
+    await writeFile(join(apksDir, `${id}.apk`), bytes);
+    return { version: fields.version || '', files: [{ abi: null, name: `${id}.apk`, bytes }] };
   }
-  if (offline) return { offline: true, version: fields.version || '' };
+  if (offline) return { offline: true, version: fields.version || '', files: [] };
 
   if (fields.repo) {
     const release = await githubJson(`https://api.github.com/repos/${fields.repo}/releases/latest`);
-    if (!release) return { error: `No published release in ${fields.repo} yet.` };
-    const apks = release.assets.filter((a) => /\.apk$/i.test(a.name));
-    const wanted = fields.asset
-      ? apks.filter((a) => a.name.includes(fields.asset))
-      : apks.filter((a) => !/debug/i.test(a.name));
-    const asset = wanted[0] ?? apks[0];
-    if (!asset) return { error: `Release ${release.tag_name} of ${fields.repo} has no .apk file attached.` };
-    const bytes = await download(asset.browser_download_url, apkDest);
+    if (!release) return { error: `No published release in ${fields.repo} yet.`, files: [] };
+    const picked = pickAssets(release.assets, fields.asset);
+    if (!picked.length) {
+      return { error: `Release ${release.tag_name} of ${fields.repo} has no matching .apk file attached.`, files: [] };
+    }
+    const files = [];
+    for (const { abi, asset } of picked) {
+      const name = abi ? `${id}-${abi}.apk` : `${id}.apk`;
+      files.push({ abi, name, bytes: await download(asset.browser_download_url, join(apksDir, name)) });
+    }
     return {
       version: fields.version || release.tag_name,
       source: release.html_url,
       published: release.published_at,
-      bytes,
+      files,
     };
   }
   if (fields.apk) {
-    const bytes = await download(fields.apk, apkDest);
-    return { version: fields.version || '', source: fields.apk, bytes };
+    const name = `${id}.apk`;
+    const bytes = await download(fields.apk, join(apksDir, name));
+    return { version: fields.version || '', source: fields.apk, files: [{ abi: null, name, bytes }] };
   }
-  return { error: 'app.md needs a "repo:" or "apk:" line, or an app.apk file in the folder.' };
+  return { error: 'app.md needs a "repo:" or "apk:" line, or an app.apk file in the folder.', files: [] };
 }
 
 async function buildApp(id, dir, outDir, offline) {
@@ -110,8 +143,7 @@ async function buildApp(id, dir, outDir, offline) {
     ? parseCommands(await readFile(commandsFile, 'utf8'), { package: fields.package })
     : [];
 
-  const apkName = `${id}.apk`;
-  const apk = await resolveApk(id, dir, fields, join(outDir, 'apks', apkName), offline);
+  const apk = await resolveApks(id, dir, fields, join(outDir, 'apks'), offline);
 
   return {
     id,
@@ -125,11 +157,13 @@ async function buildApp(id, dir, outDir, offline) {
     version: apk.version || null,
     source: apk.source || (fields.repo ? `https://github.com/${fields.repo}` : null),
     published: apk.published || null,
-    apk: apk.bytes ? {
-      path: `apks/${apkName}`,
-      size: apk.bytes.length,
-      sha256: createHash('sha256').update(apk.bytes).digest('hex'),
-    } : null,
+    // One entry, or one per CPU type (abi) for split releases.
+    apks: apk.files.map(({ abi, name, bytes }) => ({
+      abi,
+      path: `apks/${name}`,
+      size: bytes.length,
+      sha256: createHash('sha256').update(bytes).digest('hex'),
+    })),
     unavailable: apk.error || (apk.offline ? 'Built offline: no APK downloaded.' : null),
   };
 }

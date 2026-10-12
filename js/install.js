@@ -2,6 +2,24 @@
 // then run its commands.txt lines.
 import { runAll } from './commands.js';
 
+/**
+ * Picks the APK for this phone. `apks` is the catalog list (one entry, or one
+ * per CPU type); `abis` is the phone's supported CPU types, most preferred first.
+ */
+export function chooseApk(apks, abis) {
+  if (apks.length === 1 && !apks[0].abi) return apks[0];
+  for (const abi of abis) {
+    const match = apks.find((a) => a.abi === abi);
+    if (match) return match;
+  }
+  const universal = apks.find((a) => !a.abi);
+  if (universal) return universal;
+  throw new Error(
+    `There’s no version of this app for this phone’s processor (${abis.join(', ') || 'unknown'}). `
+    + `Available: ${apks.map((a) => a.abi).join(', ')}.`,
+  );
+}
+
 /** Downloads a file from this site with progress, returning a Blob. */
 async function downloadApk(path, expectedSize, onProgress) {
   const res = await fetch(path, { cache: 'no-cache' });
@@ -31,10 +49,11 @@ async function sha256Hex(blob) {
  * Resolves to the list of command results; throws if the install itself fails.
  */
 export async function installApp(app, phone, { report, onCommand }) {
+  const apk = chooseApk(app.apks, phone.info.abis);
   report({ stage: 'download', progress: 0, text: 'Downloading…' });
-  const blob = await downloadApk(app.apk.path, app.apk.size, (p) =>
+  const blob = await downloadApk(apk.path, apk.size, (p) =>
     report({ stage: 'download', progress: p * 0.4, text: 'Downloading…' }));
-  if (app.apk.sha256 && (await sha256Hex(blob)) !== app.apk.sha256) {
+  if (apk.sha256 && (await sha256Hex(blob)) !== apk.sha256) {
     throw new Error('The downloaded file was damaged (checksum mismatch). Try again.');
   }
 

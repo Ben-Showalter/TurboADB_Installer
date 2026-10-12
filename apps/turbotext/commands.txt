@@ -1,0 +1,15 @@
+# TurboText setup, run top to bottom after installing.
+
+# Texting, contacts, calls, dictation, pictures and storage
+grant {package} android.permission.READ_SMS android.permission.SEND_SMS android.permission.RECEIVE_SMS android.permission.RECEIVE_MMS android.permission.RECEIVE_WAP_PUSH android.permission.READ_CONTACTS android.permission.READ_PHONE_STATE android.permission.CALL_PHONE android.permission.RECORD_AUDIO android.permission.CAMERA android.permission.READ_EXTERNAL_STORAGE android.permission.WRITE_EXTERNAL_STORAGE
+sdk 31+: grant {package} android.permission.BLUETOOTH_CONNECT
+
+# Lets the Right soft key open TurboText from the Home screen
+enable-accessibility {package}/.KeyButtonAccessibilityService
+appops set {package} GET_USAGE_STATS allow
+
+# Notification sounds folder (only asked for on Android 11 and newer)
+sdk 30+: appops set {package} MANAGE_EXTERNAL_STORAGE allow
+
+# Default texting app - last, because the phone may ask to confirm
+set-sms-app {package}

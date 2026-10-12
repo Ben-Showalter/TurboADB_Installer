@@ -53,7 +53,48 @@ async function addToSecureList(shell, setting, component) {
   return { steps, alreadyOn: false };
 }
 
+// `pm grant` output for a permission this Android version doesn't have or
+// doesn't let you grant; not worth a ✗ (e.g. BLUETOOTH_CONNECT before Android 12).
+const GRANT_NOT_APPLICABLE = /Unknown permission|not a changeable permission type|has not requested permission/i;
+
 const SHORTCUTS = {
+  async grant(arg, { shell }) {
+    const [pkg, ...perms] = arg.split(/\s+/).filter(Boolean);
+    if (!pkg || !perms.length) throw new Error('grant needs a package and at least one permission');
+    const steps = [];
+    const skipped = [];
+    for (const perm of perms) {
+      const command = `pm grant ${pkg} ${perm}`;
+      const result = await shell(command);
+      const notApplicable = commandFailed(result) && GRANT_NOT_APPLICABLE.test(result.output);
+      if (notApplicable) skipped.push(perm.replace(/^android\.permission\./, ''));
+      steps.push({ command, ...result, skipped: notApplicable });
+    }
+    return {
+      steps,
+      note: skipped.length ? `Not needed on this phone’s Android version: ${skipped.join(', ')}.` : undefined,
+    };
+  },
+
+  async 'set-sms-app'(arg, { shell, sdk }) {
+    const pkg = arg.trim();
+    if (!pkg || /\s|\//.test(pkg)) throw new Error('set-sms-app needs a package name, like com.example.sms');
+    const steps = [];
+    if (sdk >= 29) {
+      const command = `cmd role add-role-holder android.app.role.SMS ${pkg}`;
+      const result = await shell(command);
+      steps.push({ command, ...result });
+      if (!commandFailed(result)) return { steps };
+    }
+    const open = `am start -a android.provider.Telephony.ACTION_CHANGE_DEFAULT --es package ${pkg}`;
+    steps.push({ command: open, ...(await shell(open)) });
+    return {
+      steps,
+      ignoreFailuresBefore: steps.length - 1,
+      warning: 'On the phone, answer “Yes” to make it your default messaging app.',
+    };
+  },
+
   async 'enable-accessibility'(arg, { shell }) {
     const component = requireComponent('enable-accessibility', arg);
     const { steps, alreadyOn } = await addToSecureList(shell, 'enabled_accessibility_services', component);
@@ -118,9 +159,21 @@ export const SHORTCUT_NAMES = Object.keys(SHORTCUTS);
 /**
  * Runs one commands.txt line.
  * `shell(command)` must resolve to `{ output, exitCode }`.
- * Resolves to `{ line, ok, steps, note?, warning?, error? }`; never throws.
+ * A leading `sdk N+:` runs the rest of the line only on Android API N or newer.
+ * Resolves to `{ line, ok, skipped?, steps, note?, warning?, error? }`; never throws.
  */
 export async function runLine(line, { shell, sdk }) {
+  const gated = line.match(/^sdk\s+(\d+)\+:\s*(.+)$/i);
+  if (gated) {
+    const minSdk = Number(gated[1]);
+    if (sdk < minSdk) {
+      return {
+        line, ok: true, skipped: true, steps: [],
+        note: `Skipped: only needed on Android API ${minSdk}+ (this phone is API ${sdk}).`,
+      };
+    }
+    return { ...(await runLine(gated[2], { shell, sdk })), line };
+  }
   const [name, ...rest] = line.split(/\s+/);
   const shortcut = Object.hasOwn(SHORTCUTS, name) ? SHORTCUTS[name] : null;
   try {
@@ -129,7 +182,7 @@ export async function runLine(line, { shell, sdk }) {
       return { line, ok: !commandFailed(result), steps: [{ command: line, ...result }] };
     }
     const result = await shortcut(rest.join(' '), { shell, sdk });
-    const counted = result.steps.slice(result.ignoreFailuresBefore ?? 0);
+    const counted = result.steps.slice(result.ignoreFailuresBefore ?? 0).filter((s) => !s.skipped);
     const failed = counted.find((s) => commandFailed(s));
     return {
       line,
