@@ -203,3 +203,51 @@ test('the page loads its code from a folder named after the code, so old copies 
   }
   assert.ok(!existsSync(join(out, 'js')), 'no unversioned js/ folder');
 });
+
+test('an uploaded APK with any name is used, versioned by its file name, and not copied into apps/', async () => {
+  globalThis.fetch = () => { throw new Error('no network expected'); };
+  const root = await makeSite({ tool: { 'app.md': '---\nname: T\nsummary: S\npackage: com.t\n---\n', 'MyTool_v2.3.apk': 'apk bytes' } });
+  const out = join(root, '_site');
+  const { apps, errors } = await build({ root, outDir: out, log: quiet });
+  assert.deepEqual(errors, []);
+  assert.equal(apps[0].version, 'MyTool_v2.3');
+  assert.deepEqual(apps[0].apks.map((a) => [a.abi, a.path, a.size]), [[null, 'apks/tool.apk', 9]]);
+  assert.ok(existsSync(join(out, 'apks/tool.apk')));
+  assert.ok(!existsSync(join(out, 'apps/tool/MyTool_v2.3.apk')), 'the APK is not published twice');
+});
+
+test('an uploaded APK wins over repo:', async () => {
+  globalThis.fetch = () => { throw new Error('no network expected'); };
+  const root = await makeSite({ pinned: { 'app.md': '---\nname: P\nsummary: S\npackage: p\nrepo: me/app\nversion: 1.0\n---\n', 'old.apk': 'x' } });
+  const { apps, errors } = await build({ root, outDir: join(root, '_site'), log: quiet });
+  assert.deepEqual(errors, []);
+  assert.equal(apps[0].version, '1.0');
+  assert.equal(apps[0].apks.length, 1);
+});
+
+test('uploaded per-CPU APKs become variants', async () => {
+  const root = await makeSite({ split: {
+    'app.md': '---\nname: S\nsummary: S\npackage: s\n---\n',
+    'thing-arm64-v8a.apk': 'aaaa', 'thing-armeabi-v7a.apk': 'bb',
+  } });
+  const { apps } = await build({ root, outDir: join(root, '_site'), log: quiet });
+  assert.deepEqual(apps[0].apks.map((a) => [a.abi, a.path]), [
+    ['arm64-v8a', 'apks/split-arm64-v8a.apk'],
+    ['armeabi-v7a', 'apks/split-armeabi-v7a.apk'],
+  ]);
+});
+
+test('type: mdm is recorded; a regular app defaults to type app', async () => {
+  const root = await makeSite({
+    filter: { 'app.md': '---\nname: F\nsummary: S\npackage: f\ntype: MDM\n---\n', 'f.apk': 'x' },
+    plain: { 'app.md': '---\nname: P\nsummary: S\npackage: p\n---\n', 'p.apk': 'x' },
+  });
+  const { apps } = await build({ root, outDir: join(root, '_site'), log: quiet });
+  assert.deepEqual(Object.fromEntries(apps.map((a) => [a.id, a.type])), { filter: 'mdm', plain: 'app' });
+});
+
+test('an unknown type: is an app.md error', async () => {
+  const root = await makeSite({ odd: { 'app.md': '---\nname: O\nsummary: S\npackage: o\ntype: launcher\n---\n', 'o.apk': 'x' } });
+  const { errors } = await build({ root, outDir: join(root, '_site'), log: quiet });
+  assert.match(errors[0], /type: launcher/);
+});

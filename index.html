@@ -47,11 +47,25 @@
       <li><span class="num">3</span><p>Click <b>Install</b> on the apps you want</p></li>
     </ol>
 
+    <div id="batch-bar" class="batch-bar" aria-live="polite">
+      <label class="select-all">
+        <input id="select-all" type="checkbox"> Select all
+      </label>
+      <span id="batch-status" class="batch-status muted">Tick apps to install several at once.</span>
+      <button id="batch-btn" class="btn btn-primary" type="button" disabled>Install selected</button>
+    </div>
+
     <section aria-labelledby="apps-heading">
       <h2 id="apps-heading">Apps</h2>
       <div id="app-list" class="app-list">
         <p class="muted">Loading apps…</p>
       </div>
+    </section>
+
+    <section id="mdm-section" aria-labelledby="mdm-heading" hidden>
+      <h2 id="mdm-heading">MDM / Filters</h2>
+      <p class="section-note muted">When you install several at once, these always go last, after every app above.</p>
+      <div id="mdm-list" class="app-list"></div>
     </section>
 
     <section id="help" class="help" aria-labelledby="help-heading">
@@ -137,9 +151,10 @@
   <template id="app-card">
     <article class="app-card">
       <div class="app-main">
+        <input class="app-select" type="checkbox">
         <img class="app-icon" alt="" width="56" height="56">
         <div class="app-text">
-          <h3 class="app-name"></h3>
+          <h3 class="app-name"><span class="name-text"></span> <span class="badge" hidden>MDM</span></h3>
           <p class="app-summary"></p>
           <p class="app-version muted"></p>
         </div>

@@ -1,5 +1,5 @@
 // The page: app cards, the Read more dialog and the connect bar.
-import { installApp } from './install.js';
+import { installApp, planBatch } from './install.js';
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -9,6 +9,11 @@ const els = {
   detail: $('status-detail'),
   connect: $('connect-btn'),
   list: $('app-list'),
+  mdmSection: $('mdm-section'),
+  mdmList: $('mdm-list'),
+  selectAll: $('select-all'),
+  batchBtn: $('batch-btn'),
+  batchStatus: $('batch-status'),
   dialog: $('details-dialog'),
 };
 
@@ -135,6 +140,10 @@ function renderCard(card) {
   if (installed === '' || installed) parts.push(`On phone: ${installed || 'installed'}`);
   version.textContent = parts.join(' · ');
 
+  const select = el.querySelector('.app-select');
+  select.disabled = busy || !app.apks.length;
+  if (!app.apks.length) select.checked = false;
+
   if (!app.apks.length) {
     button.textContent = 'Unavailable';
     button.disabled = true;
@@ -151,7 +160,85 @@ function setAllBusy(value) {
   busy = value;
   els.connect.disabled = value;
   for (const card of cards.values()) renderCard(card);
+  updateBatchBar();
 }
+
+// --- selecting several apps ----------------------------------------------------
+
+function selectedCards() {
+  return [...cards.values()].filter((c) => c.el.querySelector('.app-select').checked);
+}
+
+function updateBatchBar() {
+  const selectable = [...cards.values()].filter((c) => c.app.apks.length);
+  const count = selectedCards().length;
+  els.batchBtn.textContent = count ? `Install selected (${count})` : 'Install selected';
+  els.batchBtn.disabled = busy || !count;
+  els.selectAll.disabled = busy || !selectable.length;
+  els.selectAll.checked = selectable.length > 0 && count === selectable.length;
+  els.selectAll.indeterminate = count > 0 && count < selectable.length;
+}
+
+els.selectAll.addEventListener('change', () => {
+  for (const card of cards.values()) {
+    if (card.app.apks.length) card.el.querySelector('.app-select').checked = els.selectAll.checked;
+  }
+  updateBatchBar();
+});
+
+/** Shows a card's progress area as skipped, with the reason. */
+function markSkipped(card, reason) {
+  const progress = card.el.querySelector('.app-progress');
+  progress.hidden = false;
+  progress.className = 'app-progress is-skip';
+  progress.querySelector('.progress-bar > div').style.width = '0';
+  progress.querySelector('.progress-text').textContent = reason;
+  progress.querySelector('.app-log ul').replaceChildren();
+}
+
+async function installSelected() {
+  if (busy) return;
+  const chosen = selectedCards();
+  if (!chosen.length) return;
+  if (!phone?.connected) {
+    try { await connect(); } catch { return; }
+  }
+  // Page order is catalog order; planBatch moves MDMs after every regular app.
+  const order = planBatch(chosen.map((c) => c.app)).map((app) => cards.get(app.id));
+  setAllBusy(true);
+  const outcomes = { ok: 0, warn: 0, error: 0, skipped: 0 };
+  let blocker = null; // a regular app whose install failed: MDMs wait
+  try {
+    for (const [i, card] of order.entries()) {
+      if (!phone?.connected) {
+        markSkipped(card, 'Skipped: the phone disconnected.');
+        outcomes.skipped += 1;
+        continue;
+      }
+      if (card.app.type === 'mdm' && blocker) {
+        markSkipped(card, `Skipped: ${blocker} didn’t install. Fix that first, then install this MDM.`);
+        outcomes.skipped += 1;
+        continue;
+      }
+      els.batchStatus.textContent = `Installing ${i + 1} of ${order.length}: ${card.app.name}…`;
+      card.el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      const outcome = await runInstall(card);
+      outcomes[outcome] += 1;
+      if (outcome === 'error' && card.app.type !== 'mdm') blocker ??= card.app.name;
+    }
+  } finally {
+    for (const card of chosen) card.el.querySelector('.app-select').checked = false;
+    setAllBusy(false);
+  }
+  const parts = [];
+  if (outcomes.ok) parts.push(`${outcomes.ok} installed`);
+  if (outcomes.warn) parts.push(`${outcomes.warn} with warnings`);
+  if (outcomes.error) parts.push(`${outcomes.error} failed`);
+  if (outcomes.skipped) parts.push(`${outcomes.skipped} skipped`);
+  els.batchStatus.textContent = `Finished: ${parts.join(', ')}.`;
+}
+
+els.batchBtn.addEventListener('click', installSelected);
 
 function logResult(list, result) {
   const li = document.createElement('li');
@@ -178,11 +265,22 @@ function logResult(list, result) {
   list.append(li);
 }
 
+/** Install button on one card. */
 async function install(card) {
   if (busy) return;
   if (!phone?.connected) {
     try { await connect(); } catch { return; }
   }
+  setAllBusy(true);
+  try {
+    await runInstall(card);
+  } finally {
+    setAllBusy(false);
+  }
+}
+
+/** Installs one app, showing progress on its card. Resolves to 'ok', 'warn' or 'error'. */
+async function runInstall(card) {
   const { app, el } = card;
   const progress = el.querySelector('.app-progress');
   const text = progress.querySelector('.progress-text');
@@ -193,7 +291,7 @@ async function install(card) {
   log.open = false;
   progress.hidden = false;
   progress.className = 'app-progress';
-  setAllBusy(true);
+  let outcome = 'ok';
 
   try {
     const results = await installApp(app, phone, {
@@ -207,10 +305,12 @@ async function install(card) {
     const failed = results.filter((r) => !r.ok);
     const warned = results.filter((r) => r.ok && r.warning);
     if (failed.length) {
+      outcome = 'warn';
       progress.classList.add('is-warn');
       text.textContent = `Installed, but ${failed.length} setup step${failed.length > 1 ? 's' : ''} failed. See details.`;
       log.open = true;
     } else if (warned.length) {
+      outcome = 'warn';
       progress.classList.add('is-warn');
       text.textContent = `Installed. ${warned[0].warning}`;
     } else {
@@ -218,15 +318,15 @@ async function install(card) {
       text.textContent = 'Done. Installed and set up.';
     }
   } catch (e) {
+    outcome = 'error';
     progress.classList.add('is-error');
     text.textContent = `Install failed: ${e.message}`;
-  } finally {
-    setAllBusy(false);
-    if (phone?.connected) {
-      try { card.installed = await phone.installedVersion(app.package); } catch {}
-      renderCard(card);
-    }
   }
+  if (phone?.connected) {
+    try { card.installed = await phone.installedVersion(app.package); } catch {}
+    renderCard(card);
+  }
+  return outcome;
 }
 
 function openDetails(app) {
@@ -281,22 +381,29 @@ async function loadCatalog() {
   }
   const template = $('app-card');
   els.list.replaceChildren();
-  if (!catalog.apps.length) {
-    els.list.innerHTML = '<p class="muted">No apps yet.</p>';
-    return;
-  }
-  for (const app of catalog.apps) {
+  els.mdmList.replaceChildren();
+  const regular = catalog.apps.filter((a) => a.type !== 'mdm');
+  const mdms = catalog.apps.filter((a) => a.type === 'mdm');
+  if (!regular.length) els.list.innerHTML = '<p class="muted">No apps yet.</p>';
+  els.mdmSection.hidden = !mdms.length;
+  // Regular apps first, then MDMs, so the cards map's order matches the page.
+  for (const app of [...regular, ...mdms]) {
     const el = template.content.firstElementChild.cloneNode(true);
     el.querySelector('.app-icon').src = app.icon || 'favicon.svg';
-    el.querySelector('.app-name').textContent = app.name;
+    el.querySelector('.name-text').textContent = app.name;
+    el.querySelector('.badge').hidden = app.type !== 'mdm';
     el.querySelector('.app-summary').textContent = app.summary;
+    const select = el.querySelector('.app-select');
+    select.setAttribute('aria-label', `Select ${app.name}`);
+    select.addEventListener('change', updateBatchBar);
     const card = { app, el, installed: undefined };
     el.querySelector('.install-btn').addEventListener('click', () => install(card));
     el.querySelector('.more-btn').addEventListener('click', () => openDetails(app));
     cards.set(app.id, card);
     renderCard(card);
-    els.list.append(el);
+    (app.type === 'mdm' ? els.mdmList : els.list).append(el);
   }
+  updateBatchBar();
 }
 
 if (!navigator.usb) {

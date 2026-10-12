@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Builds the site into _site/: copies the page, reads every apps/<id>/ folder,
 // downloads each app's APK (latest GitHub release, a direct link, or a local
-// app.apk) and writes catalog.json, which is all the page reads.
+// .apk uploaded into the folder) and writes catalog.json, which is all the page reads.
 //
 //   node scripts/build-catalog.mjs            # full build
 //   node scripts/build-catalog.mjs --offline  # skip downloads (for quick previews and tests)
@@ -20,8 +20,10 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 // so a browser holding an old copy can never mix it with a new catalog.json.
 const CODE_DIRS = ['css', 'js'];
 const ICON_NAMES = ['icon.svg', 'icon.png', 'icon.webp', 'icon.jpg'];
-// Files in an app folder that aren't copied to the site as-is.
-const PRIVATE_FILES = new Set(['app.md', 'commands.txt', 'app.apk']);
+// Files in an app folder that aren't copied to the site as-is (APKs go to apks/).
+const PRIVATE_FILES = new Set(['app.md', 'commands.txt']);
+const isApk = (name) => /\.apk$/i.test(name);
+const APP_TYPES = ['app', 'mdm'];
 
 /** Splits `---` front matter (simple `key: value` lines) from the Markdown body. */
 export function parseAppMd(text) {
@@ -92,11 +94,19 @@ export function pickAssets(assets, wantedName) {
  * Returns { version, source, published, files: [{ abi, name, bytes }] } or { error }.
  */
 async function resolveApks(id, dir, fields, apksDir, offline) {
-  const local = join(dir, 'app.apk');
-  if (existsSync(local)) {
-    const bytes = await readFile(local);
-    await writeFile(join(apksDir, `${id}.apk`), bytes);
-    return { version: fields.version || '', files: [{ abi: null, name: `${id}.apk`, bytes }] };
+  // APK files uploaded into the folder win: they stay at that version until replaced.
+  const localApks = (await readdir(dir)).filter(isApk).sort();
+  if (localApks.length) {
+    const picked = pickAssets(localApks.map((name) => ({ name })));
+    const files = [];
+    for (const { abi, asset } of picked) {
+      const name = abi ? `${id}-${abi}.apk` : `${id}.apk`;
+      const bytes = await readFile(join(dir, asset.name));
+      await writeFile(join(apksDir, name), bytes);
+      files.push({ abi, name, bytes });
+    }
+    const fromName = picked[0].asset.name.replace(/\.apk$/i, '');
+    return { version: fields.version || (picked.length === 1 ? fromName : ''), files };
   }
   if (offline) return { offline: true, version: fields.version || '', files: [] };
 
@@ -124,7 +134,7 @@ async function resolveApks(id, dir, fields, apksDir, offline) {
     const bytes = await download(fields.apk, join(apksDir, name));
     return { version: fields.version || '', source: fields.apk, files: [{ abi: null, name, bytes }] };
   }
-  return { error: 'app.md needs a "repo:" or "apk:" line, or an app.apk file in the folder.', files: [] };
+  return { error: 'app.md needs a "repo:" or "apk:" line, or an .apk file in the folder.', files: [] };
 }
 
 async function buildApp(id, dir, outDir, offline) {
@@ -132,11 +142,15 @@ async function buildApp(id, dir, outDir, offline) {
   for (const key of ['name', 'summary', 'package']) {
     if (!fields[key]) throw new Error(`app.md is missing "${key}:"`);
   }
+  const type = (fields.type || 'app').toLowerCase();
+  if (!APP_TYPES.includes(type)) {
+    throw new Error(`app.md has "type: ${fields.type}"; use "type: mdm" for an MDM, or leave it out`);
+  }
 
   const appOut = join(outDir, 'apps', id);
   await mkdir(appOut, { recursive: true });
   for (const name of await readdir(dir)) {
-    if (!PRIVATE_FILES.has(name)) await cp(join(dir, name), join(appOut, name), { recursive: true });
+    if (!PRIVATE_FILES.has(name) && !isApk(name)) await cp(join(dir, name), join(appOut, name), { recursive: true });
   }
   const icon = ICON_NAMES.find((n) => existsSync(join(dir, n)));
 
@@ -152,6 +166,7 @@ async function buildApp(id, dir, outDir, offline) {
     name: fields.name,
     summary: fields.summary,
     package: fields.package,
+    type,
     order: Number(fields.order ?? 1000),
     icon: icon ? `apps/${id}/${icon}` : null,
     details: rebaseLinks(marked.parse(body), `apps/${id}/`),

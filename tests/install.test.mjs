@@ -22,3 +22,14 @@ test('a 32-bit phone gets the 32-bit APK', () => {
 test('no matching CPU type gives a clear error', () => {
   assert.throws(() => chooseApk(split, ['x86_64', 'x86']), /processor \(x86_64, x86\)/);
 });
+
+test('planBatch installs every regular app before any MDM, keeping page order', async () => {
+  const { planBatch } = await import('../js/install.js');
+  const apps = [
+    { id: 'mdm1', type: 'mdm' },
+    { id: 'a', type: 'app' },
+    { id: 'mdm2', type: 'mdm' },
+    { id: 'b', type: 'app' },
+  ];
+  assert.deepEqual(planBatch(apps).map((a) => a.id), ['a', 'b', 'mdm1', 'mdm2']);
+});

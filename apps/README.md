@@ -25,6 +25,33 @@ code; you can do all of this in GitHub's website.
 
 Folders whose name starts with `_` (like `_example`) are ignored.
 
+## Adding an app from an APK file (no GitHub release)
+
+For an app that isn't on GitHub, or to keep an app at one exact version:
+
+1. Make the app's folder with `app.md` (leave out the `repo:` line),
+   `commands.txt` and an icon, as above.
+2. In that folder, **Add file → Upload files** and drag the `.apk` in. Any file
+   name works.
+3. Commit.
+
+The site installs that file until you upload a different one (delete the old
+`.apk` when you do). The card shows the file name as the version unless you set
+`version:` in `app.md`. An uploaded APK always wins over `repo:` and `apk:`.
+
+GitHub's website accepts files up to **25 MB**. For a bigger APK, put it
+somewhere that gives a direct download link and use `apk: <link>` instead.
+For a processor-split app, upload one APK per type with the type in the file
+name (for example `myapp-arm64-v8a.apk` and `myapp-armeabi-v7a.apk`).
+
+## MDM apps
+
+Add **`type: mdm`** to an MDM's `app.md`. MDMs are listed in their own
+**MDM / Filters** section, and when you tick several apps and click
+**Install selected**, every regular app installs first and MDMs go last. If a
+regular app fails to install, the selected MDMs are skipped (an MDM can block
+installing other apps afterwards), so you can fix the problem first.
+
 ## `app.md` options
 
 | Line | Needed? | What it does |
@@ -34,7 +61,8 @@ Folders whose name starts with `_` (like `_example`) are ignored.
 | `package:` | yes | Package name; also fills in `{package}` in `commands.txt` |
 | `repo:` | one of these three | Installs the latest GitHub release's `.apk` |
 | `apk:` | | A direct download link to an `.apk` |
-| `app.apk` file | | An APK file put in the app's folder |
+| an uploaded `.apk` file | | An APK file in the app's folder (any name); stays at that version |
+| `type:` | no | `mdm` for an MDM (own section, installed last); leave out for a regular app |
 | `asset:` | no | With `repo:`, when a release has several APKs: part of the file name to pick (e.g. `release`). By default the first non-debug APK is used. |
 | `version:` | no | Version to show (filled in automatically for `repo:`) |
 | `order:` | no | Sort position; lower numbers first (default 1000, then by name) |

@@ -70,3 +70,8 @@ export async function installApp(app, phone, { report, onCommand }) {
     onCommand(result);
   });
 }
+
+/** The order to install a selection in: every regular app (in page order), then MDMs. */
+export function planBatch(apps) {
+  return [...apps.filter((a) => a.type !== 'mdm'), ...apps.filter((a) => a.type === 'mdm')];
+}

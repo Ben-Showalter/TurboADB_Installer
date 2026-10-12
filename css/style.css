@@ -109,6 +109,43 @@ h2 { font-size: 1.25rem; margin: 2rem 0 1rem; }
   background: var(--accent-soft); color: var(--accent); font-weight: 700; font-size: 0.8rem;
 }
 
+/* Install-several bar */
+.batch-bar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  margin-top: 20px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.select-all { display: flex; align-items: center; gap: 8px; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.batch-status { flex: 1; min-width: 0; font-size: 0.92rem; }
+.batch-bar input[type="checkbox"], .app-select {
+  width: 20px; height: 20px; margin: 0; flex: none; accent-color: var(--accent); cursor: pointer;
+}
+.batch-bar input:disabled, .app-select:disabled { cursor: not-allowed; }
+.section-note { margin: -0.5rem 0 1rem; font-size: 0.92rem; }
+
+.badge {
+  display: inline-block;
+  vertical-align: middle;
+  margin-left: 6px;
+  padding: 1px 8px;
+  border-radius: 99px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 14%, var(--surface));
+}
+.badge[hidden] { display: none; }
+
 /* App cards */
 .app-list { display: grid; gap: 12px; }
 .app-card {
@@ -137,6 +174,8 @@ h2 { font-size: 1.25rem; margin: 2rem 0 1rem; }
 .app-progress.is-ok .progress-text { color: var(--ok); font-weight: 600; }
 .app-progress.is-warn .progress-text { color: var(--warn); font-weight: 600; }
 .app-progress.is-error .progress-text { color: var(--error); font-weight: 600; }
+.app-progress.is-skip .progress-text { color: var(--muted); font-weight: 600; }
+.app-progress.is-skip .app-log { display: none; }
 
 .app-log { margin-top: 10px; font-size: 0.88rem; }
 .app-log summary { cursor: pointer; color: var(--muted); }
@@ -194,6 +233,9 @@ h2 { font-size: 1.25rem; margin: 2rem 0 1rem; }
 .help details[open] summary { margin-bottom: 6px; }
 
 @media (max-width: 640px) {
+  .batch-bar { flex-wrap: wrap; }
+  .batch-status { order: 3; flex-basis: 100%; }
+  .batch-bar .btn { margin-left: auto; }
   .connect-card { flex-direction: column; align-items: stretch; }
   .steps { grid-template-columns: 1fr; }
   .app-main { flex-wrap: wrap; }
