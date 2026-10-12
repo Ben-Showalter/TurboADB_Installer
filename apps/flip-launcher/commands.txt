@@ -1,0 +1,15 @@
+# Runs on the phone after Flip Launcher is installed, top to bottom.
+# One command per line, as you'd type it after `adb shell`.
+# {package} is replaced with the package name from app.md.
+
+# Speed dial and the call log
+pm grant {package} android.permission.READ_CALL_LOG
+pm grant {package} android.permission.READ_CONTACTS
+pm grant {package} android.permission.CALL_PHONE
+
+# Notifications on Home
+enable-accessibility {package}/.service.NotificationAccessibilityService
+enable-notification-listener {package}/.service.NotificationCountService
+
+# Make it the Home screen
+set-home {package}/.activities.MainActivity

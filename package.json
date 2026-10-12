@@ -1,0 +1,17 @@
+{
+  "name": "turboadb-installer",
+  "private": true,
+  "type": "module",
+  "description": "Install Android apps and set up their permissions from the browser over WebUSB.",
+  "scripts": {
+    "build": "node scripts/build-catalog.mjs",
+    "preview": "node scripts/build-catalog.mjs && npx --yes http-server _site -c-1 -o",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "devDependencies": {
+    "marked": "14.1.4"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

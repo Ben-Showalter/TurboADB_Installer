@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TurboADB Installer</title>
+  <meta name="description" content="Install apps on your Android phone from the browser: plug it in, click Install, and the permissions are set up for you.">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap">
+      <div class="brand">
+        <img src="favicon.svg" alt="" width="36" height="36">
+        <div>
+          <h1>TurboADB Installer</h1>
+          <p class="tagline">Install apps on your phone from this page. No computer setup needed.</p>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section id="unsupported" class="banner banner-error" hidden>
+      <strong>This browser can’t connect to phones.</strong>
+      Open this page in <b>Google Chrome</b> or <b>Microsoft Edge</b> on a Windows, Mac,
+      Linux or ChromeOS computer. Firefox and Safari don’t support USB connections.
+    </section>
+
+    <section class="connect-card" aria-live="polite">
+      <div class="connect-status">
+        <span id="status-dot" class="dot"></span>
+        <div>
+          <div id="status-title" class="status-title">No phone connected</div>
+          <div id="status-detail" class="status-detail">
+            Turn on <a href="#help-usb-debugging">USB debugging</a>, plug the phone in, then connect.
+          </div>
+        </div>
+      </div>
+      <button id="connect-btn" class="btn btn-primary" type="button">Connect phone</button>
+    </section>
+
+    <ol class="steps">
+      <li><span class="num">1</span><p>Turn on <a href="#help-usb-debugging">USB debugging</a> on the phone</p></li>
+      <li><span class="num">2</span><p>Plug it in with a USB cable and click <b>Connect phone</b></p></li>
+      <li><span class="num">3</span><p>Click <b>Install</b> on the apps you want</p></li>
+    </ol>
+
+    <section aria-labelledby="apps-heading">
+      <h2 id="apps-heading">Apps</h2>
+      <div id="app-list" class="app-list">
+        <p class="muted">Loading apps…</p>
+      </div>
+    </section>
+
+    <section id="help" class="help" aria-labelledby="help-heading">
+      <h2 id="help-heading">Help</h2>
+
+      <details id="help-usb-debugging">
+        <summary>How do I turn on USB debugging?</summary>
+        <ol>
+          <li>On the phone, open <b>Settings → About phone</b>.</li>
+          <li>Find <b>Build number</b> and press it <b>7 times</b>. You’ll see “You are now a developer”.</li>
+          <li>Go back to <b>Settings</b> and open <b>Developer options</b> (sometimes under <b>System</b>).</li>
+          <li>Turn on <b>USB debugging</b>.</li>
+        </ol>
+        <p>On some flip phones (for example TCL and Alcatel), dial <code>*#*#33284#*#*</code> instead.</p>
+        <p>When you connect, the phone asks <b>“Allow USB debugging?”</b>. Tick
+          <b>Always allow from this computer</b> and press <b>Allow</b>. On a flip phone the
+          prompt can appear on the inside screen, so open the phone to see it.</p>
+      </details>
+
+      <details>
+        <summary>“Another program is using the phone” or the connection fails</summary>
+        <ul>
+          <li>Only one program can talk to the phone at a time. If adb is installed on this
+            computer, run <code>adb kill-server</code> in a terminal, then try again.</li>
+          <li>Close other tabs or apps that might be using the phone (Android Studio, phone managers).</li>
+          <li>Unplug the phone, plug it back in, and click <b>Connect phone</b> again.</li>
+          <li>Try a different cable or USB port. Some cables only charge and can’t carry data.</li>
+        </ul>
+      </details>
+
+      <details>
+        <summary>My phone doesn’t appear in the list (Windows)</summary>
+        <p>Windows sometimes needs a USB driver before the browser can see the phone. Install the
+          <a href="https://developer.android.com/studio/run/win-usb" target="_blank" rel="noopener">Google USB Driver</a>
+          or the phone maker’s own USB driver, then unplug and replug the phone.</p>
+        <p>On the phone, also make sure the USB mode is set to <b>File transfer</b> or
+          <b>Charging only</b> with USB debugging still on.</p>
+      </details>
+
+      <details>
+        <summary>The phone never shows “Allow USB debugging?”</summary>
+        <ul>
+          <li>Open or unlock the phone. The prompt only shows on an unlocked screen.</li>
+          <li>In Developer options, use <b>Revoke USB debugging authorizations</b>, then unplug, replug and connect again.</li>
+        </ul>
+      </details>
+
+      <details>
+        <summary>Is this safe? What does it do to my phone?</summary>
+        <p>Everything runs in this browser tab. The page talks straight to the phone over the USB
+          cable; nothing is sent to a server. Each app’s <b>Read more</b> lists the exact commands it
+          runs on the phone. You can turn USB debugging off again when you’re done.</p>
+      </details>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      Built with <a href="https://github.com/yume-chan/ya-webadb" target="_blank" rel="noopener">Tango (ya-webadb)</a>.
+      Inspired by the <a href="https://github.com/JTech-Forums/mdminstaller" target="_blank" rel="noopener">JTech MDM Installer</a>.
+      <a href="https://github.com/Ben-Showalter/TurboADB_Installer" target="_blank" rel="noopener">Source code</a>.
+    </div>
+  </footer>
+
+  <dialog id="details-dialog" class="details-dialog" aria-labelledby="details-title">
+    <form method="dialog" class="dialog-close-row">
+      <button class="btn btn-ghost" aria-label="Close">✕</button>
+    </form>
+    <div class="details-head">
+      <img id="details-icon" alt="" width="56" height="56">
+      <div>
+        <h2 id="details-title"></h2>
+        <div id="details-meta" class="muted"></div>
+      </div>
+    </div>
+    <div id="details-body" class="markdown"></div>
+    <details id="details-commands" class="commands">
+      <summary>What this will run on your phone</summary>
+      <pre id="details-commands-list"></pre>
+    </details>
+  </dialog>
+
+  <template id="app-card">
+    <article class="app-card">
+      <div class="app-main">
+        <img class="app-icon" alt="" width="56" height="56">
+        <div class="app-text">
+          <h3 class="app-name"></h3>
+          <p class="app-summary"></p>
+          <p class="app-version muted"></p>
+        </div>
+        <div class="app-actions">
+          <button class="btn btn-primary install-btn" type="button">Install</button>
+          <button class="btn btn-ghost more-btn" type="button">Read more</button>
+        </div>
+      </div>
+      <div class="app-progress" hidden>
+        <div class="progress-text"></div>
+        <div class="progress-bar"><div></div></div>
+        <details class="app-log">
+          <summary>Details</summary>
+          <ul></ul>
+        </details>
+      </div>
+    </article>
+  </template>
+
+  <script type="module" src="js/ui.js"></script>
+</body>
+</html>
